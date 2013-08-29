@@ -52,7 +52,7 @@ class L3RpcCallbackMixin(object):
                 l3plugin, constants.L3_AGENT_SCHEDULER_EXT_ALIAS):
             if cfg.CONF.router_auto_schedule:
                 l3plugin.auto_schedule_routers(context, host, router_ids)
-            routers = l3plugin.list_active_sync_routers_on_active_l3_agent(
+            routers = l3plugin.list_sync_routers_on_active_l3_agent(
                 context, host, router_ids)
         else:
             routers = l3plugin.get_sync_data(context, router_ids)
