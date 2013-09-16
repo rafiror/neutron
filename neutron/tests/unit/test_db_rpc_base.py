@@ -17,7 +17,7 @@ import mock
 
 from neutron.db import dhcp_rpc_base
 from neutron.tests import base
-
+from neutron.db import l3_rpc_base
 
 class TestDhcpRpcCallackMixin(base.BaseTestCase):
 
@@ -148,3 +148,23 @@ class TestDhcpRpcCallackMixin(base.BaseTestCase):
                                                        device_id=['devid'])),
             mock.call.update_port(mock.ANY, 'port_id',
                                   dict(port=port_update))])
+
+
+class Testl3RpcCallbackMixin(base.BaseTestCase):
+
+    def setUp(self):
+        super(Testl3RpcCallackMixin, self).setUp()
+        self.plugin_p = mock.patch('neutron.manager.NeutronManager.get_plugin')
+        get_plugin = self.plugin_p.start()
+        self.plugin = mock.MagicMock()
+        get_plugin.return_value = self.plugin
+        self.callbacks = dhcp_rpc_base.l3RpcCallbackMixin()
+        self.log_p = mock.patch('neutron.db.l3_rpc_base.LOG')
+        self.log = self.log_p.start()
+
+    def tearDown(self):
+        self.log_p.stop()
+        self.plugin_p.stop()
+        super(Testl3RpcCallackMixin, self).tearDown()
+
+    def test_sync_routers(self):
