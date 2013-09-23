@@ -153,18 +153,35 @@ class TestDhcpRpcCallackMixin(base.BaseTestCase):
 class Testl3RpcCallbackMixin(base.BaseTestCase):
 
     def setUp(self):
-        super(Testl3RpcCallackMixin, self).setUp()
+        super(Testl3RpcCallbackMixin, self).setUp()
+        self.l3plugin_p = mock.patch('neutron.manager.NeutronManager.get_service_plugins')
         self.plugin_p = mock.patch('neutron.manager.NeutronManager.get_plugin')
+        get_l3plugin = self.l3plugin_p.start()
         get_plugin = self.plugin_p.start()
+        self.l3plugin = mock.MagicMock()
         self.plugin = mock.MagicMock()
+        get_l3plugin.return_value = self.l3plugin
         get_plugin.return_value = self.plugin
-        self.callbacks = dhcp_rpc_base.l3RpcCallbackMixin()
+        self.callbacks = l3_rpc_base.L3RpcCallbackMixin()
         self.log_p = mock.patch('neutron.db.l3_rpc_base.LOG')
         self.log = self.log_p.start()
 
     def tearDown(self):
         self.log_p.stop()
+        self.l3plugin_p.stop()
         self.plugin_p.stop()
-        super(Testl3RpcCallackMixin, self).tearDown()
+        super(Testl3RpcCallbackMixin, self).tearDown()
 
     def test_sync_routers(self):
+        plugin_retval = [dict(id='a'), dict(id='b')]
+        router_ids = [dict(id='a'), dict(id='b')]
+        #self.l3plugin.get_sync_routers_on_active_l3_agent.return_value = plugin_retval
+        self.l3plugin.get_sync_data.return_value = plugin_retval
+        routers = self.callbacks.sync_routers(mock.Mock(), router_ids=router_ids, host='host')
+        #self.assertEqual(routers, ['a', 'b'])
+
+    def test_get_external_network_id(self):
+        plugin_retval = dict(id='a')
+        self.plugin.get_external_network_id.return_value = plugin_retval
+        retval = self.callbacks.get_external_network_id(mock.Mock())
+        self.assertEqual(retval, plugin_retval)
