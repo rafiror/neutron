@@ -175,10 +175,10 @@ class Testl3RpcCallbackMixin(base.BaseTestCase):
     def test_sync_routers(self):
         plugin_retval = [dict(id='a'), dict(id='b')]
         router_ids = [dict(id='a'), dict(id='b')]
-        #self.l3plugin.get_sync_routers_on_active_l3_agent.return_value = plugin_retval
+        self.l3plugin.get_sync_routers_on_active_l3_agent.return_value = plugin_retval
         self.l3plugin.get_sync_data.return_value = plugin_retval
         routers = self.callbacks.sync_routers(mock.Mock(), router_ids=router_ids, host='host')
-        #self.assertEqual(routers, ['a', 'b'])
+        self.assertEqual(routers, plugin_retval)
 
     def test_get_external_network_id(self):
         plugin_retval = dict(id='a')

@@ -514,6 +514,15 @@ class TestBasicRouterOperations(base.BaseTestCase):
                 break
 
     def testRoutersWithAdminStateDown(self):
+
+        class FakeDev(object):
+            def __init__(self, name):
+                self.name = name
+
+        self.mock_ip.get_namespaces.return_value = ['qrouter-foo']
+        self.mock_ip.get_devices.return_value = [FakeDev('qr-aaaa'),
+                                                 FakeDev('qgw-aaaa')]
+
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
         self.plugin_api.get_external_network_id.return_value = None
 
@@ -521,8 +530,12 @@ class TestBasicRouterOperations(base.BaseTestCase):
             {'id': _uuid(),
              'admin_state_up': False,
              'external_gateway_info': {}}]
+        agent._router_removed = mock.MagicMock()
+        agent._destroy_router_namespace = mock.MagicMock()
         agent._process_routers(routers)
         self.assertNotIn(routers[0]['id'], agent.router_info)
+        self.assertEqual(agent._router_removed.call_count, 1)
+        #self.assertEqual(agent._destroy_router_namespace.call_count, 1)
 
     def test_router_deleted(self):
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)

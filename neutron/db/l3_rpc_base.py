@@ -44,6 +44,10 @@ class L3RpcCallbackMixin(object):
         context = neutron_context.get_admin_context()
         l3plugin = manager.NeutronManager.get_service_plugins()[
             plugin_constants.L3_ROUTER_NAT]
+        
+        routers = l3plugin.get_sync_data(context, router_ids)
+        return routers
+
         if not l3plugin:
             routers = {}
             LOG.error(_('No plugin for L3 routing registered! Will reply '
