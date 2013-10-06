@@ -20,6 +20,7 @@
 from neutron.openstack.common import excutils
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
+from neutron.plugins.nicira.common import utils
 from neutron.plugins.nicira.vshield.common import (
     constants as vcns_const)
 from neutron.plugins.nicira.vshield.common.constants import RouterStatus
@@ -101,7 +102,8 @@ class EdgeApplianceDriver(object):
             }
             if secondary:
                 address_group['secondaryAddresses'] = {
-                    'ipAddress': secondary
+                    'ipAddress': secondary,
+                    'type': 'IpAddressesDto'
                 }
 
             vnic['addressGroups'] = {
@@ -623,16 +625,19 @@ class EdgeApplianceDriver(object):
         self.task_manager.add(task)
         return task
 
-    def create_lswitch(self, name, tz_config):
+    def create_lswitch(self, name, tz_config, tags=None,
+                       port_isolation=False, replication_mode="service"):
         lsconfig = {
-            'display_name': name,
-            "tags": [],
+            'display_name': utils.check_and_truncate(name),
+            "tags": tags or [],
             "type": "LogicalSwitchConfig",
             "_schema": "/ws.v1/schema/LogicalSwitchConfig",
-            "port_isolation_enabled": False,
-            "replication_mode": "service",
             "transport_zones": tz_config
         }
+        if port_isolation is bool:
+            lsconfig["port_isolation_enabled"] = port_isolation
+        if replication_mode:
+            lsconfig["replication_mode"] = replication_mode
 
         response = self.vcns.create_lswitch(lsconfig)[1]
         return response

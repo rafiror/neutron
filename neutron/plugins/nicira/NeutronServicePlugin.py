@@ -25,6 +25,7 @@ from neutron.db import l3_db
 from neutron.db.loadbalancer import loadbalancer_db
 from neutron.db import routedserviceinsertion_db as rsi_db
 from neutron.extensions import firewall as fw_ext
+from neutron.extensions import l3
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as service_constants
@@ -106,6 +107,21 @@ class NvpAdvancedPlugin(sr_db.ServiceRouter_mixin,
 
         # load the vCNS driver
         self._load_vcns_drivers()
+
+        # nvplib's create_lswitch needs to be replaced in order to proxy
+        # logical switch create requests to vcns
+        self._set_create_lswitch_proxy()
+
+    def _set_create_lswitch_proxy(self):
+        NeutronPlugin.nvplib.create_lswitch = self._proxy_create_lswitch
+
+    def _proxy_create_lswitch(self, *args, **kwargs):
+        name, tz_config, tags = (
+            _process_base_create_lswitch_args(*args, **kwargs)
+        )
+        return self.vcns_driver.create_lswitch(
+            name, tz_config, tags=tags,
+            port_isolation=None, replication_mode=None)
 
     def _load_vcns_drivers(self):
         self.vcns_driver = vcns_driver.VcnsDriver(self.callbacks)
@@ -473,14 +489,10 @@ class NvpAdvancedPlugin(sr_db.ServiceRouter_mixin,
         return lrouter
 
     def _delete_lrouter(self, context, id):
-        if not self._is_advanced_service_router(context, id):
-            super(NvpAdvancedPlugin, self)._delete_lrouter(context, id)
-            if id in self._router_type:
-                del self._router_type[id]
-            return
-
         binding = vcns_db.get_vcns_router_binding(context.session, id)
-        if binding:
+        if not binding:
+            super(NvpAdvancedPlugin, self)._delete_lrouter(context, id)
+        else:
             vcns_db.update_vcns_router_binding(
                 context.session, id, status=service_constants.PENDING_DELETE)
 
@@ -499,8 +511,9 @@ class NvpAdvancedPlugin(sr_db.ServiceRouter_mixin,
             }
             self.vcns_driver.delete_edge(id, edge_id, jobdata=jobdata)
 
-        # delete LR
-        nvplib.delete_lrouter(self.cluster, id)
+            # delete LR
+            nvplib.delete_lrouter(self.cluster, id)
+
         if id in self._router_type:
             del self._router_type[id]
 
@@ -697,8 +710,8 @@ class NvpAdvancedPlugin(sr_db.ServiceRouter_mixin,
             router = self._get_router(context, router_id)
             # TODO(fank): do rollback on error, or have a dedicated thread
             # do sync work (rollback, re-configure, or make router down)
-            self._update_interface(context, router)
             self._update_nat_rules(context, router)
+            self._update_interface(context, router)
         return fip
 
     def update_floatingip(self, context, id, floatingip):
@@ -709,8 +722,8 @@ class NvpAdvancedPlugin(sr_db.ServiceRouter_mixin,
             router = self._get_router(context, router_id)
             # TODO(fank): do rollback on error, or have a dedicated thread
             # do sync work (rollback, re-configure, or make router down)
-            self._update_interface(context, router)
             self._update_nat_rules(context, router)
+            self._update_interface(context, router)
         return fip
 
     def delete_floatingip(self, context, id):
@@ -1528,24 +1541,33 @@ class VcnsCallbacks(object):
         lrouter = jobdata['lrouter']
         context = jobdata['context']
         name = task.userdata['router_name']
-        router_db = self.plugin._get_router(context, lrouter['uuid'])
+        router_db = None
+        try:
+            router_db = self.plugin._get_router(context, lrouter['uuid'])
+        except l3.RouterNotFound:
+            # Router might have been deleted before deploy finished
+            LOG.exception(_("Router %s not found"), lrouter['uuid'])
+
         if task.status == TaskStatus.COMPLETED:
             LOG.debug(_("Successfully deployed %(edge_id)s for "
                         "router %(name)s"), {
                             'edge_id': task.userdata['edge_id'],
                             'name': name})
-            if router_db['status'] == service_constants.PENDING_CREATE:
+            if (router_db and
+                    router_db['status'] == service_constants.PENDING_CREATE):
                 router_db['status'] = service_constants.ACTIVE
-                binding = vcns_db.get_vcns_router_binding(
-                    context.session, lrouter['uuid'])
-                # only update status to active if its status is pending create
-                if binding['status'] == service_constants.PENDING_CREATE:
-                    vcns_db.update_vcns_router_binding(
-                        context.session, lrouter['uuid'],
-                        status=service_constants.ACTIVE)
+
+            binding = vcns_db.get_vcns_router_binding(
+                context.session, lrouter['uuid'])
+            # only update status to active if its status is pending create
+            if binding['status'] == service_constants.PENDING_CREATE:
+                vcns_db.update_vcns_router_binding(
+                    context.session, lrouter['uuid'],
+                    status=service_constants.ACTIVE)
         else:
             LOG.debug(_("Failed to deploy Edge for router %s"), name)
-            router_db['status'] = service_constants.ERROR
+            if router_db:
+                router_db['status'] = service_constants.ERROR
             vcns_db.update_vcns_router_binding(
                 context.session, lrouter['uuid'],
                 status=service_constants.ERROR)
@@ -1578,3 +1600,22 @@ class VcnsCallbacks(object):
 
     def nat_update_result(self, task):
         LOG.debug(_("nat_update_result %d"), task.status)
+
+
+def _process_base_create_lswitch_args(*args, **kwargs):
+    tags = [{"tag": nvplib.NEUTRON_VERSION, "scope": "quantum"}]
+    if args[1]:
+        tags.append({"tag": args[1], "scope": "os_tid"})
+    switch_name = args[2]
+    tz_config = args[3]
+    if "neutron_net_id" in kwargs or len(args) >= 5:
+        neutron_net_id = kwargs.get('neutron_net_id')
+        if neutron_net_id is None:
+            neutron_net_id = args[4]
+        tags.append({"tag": neutron_net_id,
+                     "scope": "quantum_net_id"})
+    if kwargs.get("shared", False) or len(args) >= 6:
+        tags.append({"tag": "true", "scope": "shared"})
+    if kwargs.get("tags"):
+        tags.extend(kwargs["tags"])
+    return switch_name, tz_config, tags

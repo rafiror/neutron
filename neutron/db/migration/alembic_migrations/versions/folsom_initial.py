@@ -321,7 +321,7 @@ def upgrade_nec():
         'packetfilters',
         sa.Column('tenant_id', sa.String(length=255), nullable=True),
         sa.Column('id', sa.String(length=36), nullable=False),
-        sa.Column('network_id', sa.String(length=36), nullable=True),
+        sa.Column('network_id', sa.String(length=36), nullable=False),
         sa.Column('priority', sa.Integer(), nullable=False),
         sa.Column('action', sa.String(16), nullable=False),
         sa.Column('in_port', sa.String(36), nullable=False),
@@ -504,7 +504,7 @@ def downgrade_ryu():
 
 def downgrade_cisco():
     op.drop_tables(
-        'nextport_bindings',
+        'nexusport_bindings',
         'port_bindings',
         'credentials',
         'qoss',

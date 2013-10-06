@@ -167,7 +167,6 @@ class Testl3RpcCallbackMixin(base.BaseTestCase):
         self.callbacks = l3_rpc_base.L3RpcCallbackMixin()
         self.log_p = mock.patch('neutron.db.l3_rpc_base.LOG')
         self.log = self.log_p.start()
-        NeutronManager._instance = None
 
     def tearDown(self):
         self.log_p.stop()
@@ -178,11 +177,8 @@ class Testl3RpcCallbackMixin(base.BaseTestCase):
     def test_sync_routers(self):
         plugin_retval = [dict(id='a'), dict(id='b')]
         router_ids = [dict(id='a'), dict(id='b')]
-        mgr = manager.NeutronManager.get_instance()
-        l3plugin = mgr.get_service_plugins()[constants.DUMMY]
-        #self.l3plugin.get_sync_routers_on_active_l3_agent.return_value = plugin_retval
-        #self.l3plugin.get_sync_data.return_value = plugin_retval
-        l3plugin.get_sync_data.return_value = plugin_retval
+        self.l3plugin.get_sync_routers_on_active_l3_agent.return_value = plugin_retval
+        self.l3plugin.get_sync_data.return_value = plugin_retval
         routers = self.callbacks.sync_routers(mock.Mock(), router_ids=router_ids, host='host')
         self.assertEqual(routers, plugin_retval)
 
